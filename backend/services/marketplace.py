@@ -130,6 +130,7 @@ def purchase_license(
         usage_limit=usage_limit,
     )
     db.add(license)
+    db.flush()  # Materialise license_id before PaymentTransaction FK reference
 
     # Record payment transaction
     fee = int(listing.price_cents * PLATFORM_FEE_PCT)

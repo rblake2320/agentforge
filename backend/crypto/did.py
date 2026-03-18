@@ -62,6 +62,9 @@ def create_did_document(
         ],
         "authentication": [key_id],
         "assertionMethod": [key_id],
+        "keyAgreement": [key_id],
+        "capabilityInvocation": [key_id],
+        "capabilityDelegation": [key_id],
         "created": datetime.now(timezone.utc).isoformat(),
     }
 

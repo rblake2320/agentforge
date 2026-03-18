@@ -25,27 +25,96 @@ services:
       - "8400:8400"
     environment:
       DATABASE_URL: postgresql://postgres:%3FBooker78%21@postgres:5432/agentvault
+      NIM_BASE_URL: http://nim-llm:8000
+      NGC_API_KEY: ${NGC_API_KEY:-}
     depends_on:
       postgres:
         condition: service_healthy
     volumes:
       - ./backend:/app
+      - flywheel_logs:/flywheel_logs
     command: uvicorn backend.main:app --host 0.0.0.0 --port 8400 --reload
 
-  # NVIDIA NIM (Phase 3 — uncomment when NGC_API_KEY available)
-  # nim:
-  #   image: nvcr.io/nim/nvidia/llm-nim:latest
+  # ─── NVIDIA NIM — Self-hosted LLM on RTX 5090 ────────────────────────────────
+  #
+  # Prerequisites:
+  #   1. NGC API key: https://org.ngc.nvidia.com/setup/personal-keys
+  #      (check "NGC Catalog" when creating)
+  #   2. Authenticate Docker:
+  #      echo "$NGC_API_KEY" | docker login nvcr.io --username '$oauthtoken' --password-stdin
+  #   3. Set NGC_API_KEY in your .env file or environment.
+  #
+  # RTX 5090 (32GB) recommended models:
+  #   - nvcr.io/nim/meta/llama-3.1-8b-instruct:latest         (~16GB VRAM, BF16)
+  #   - nvcr.io/nim/meta/llama-3.2-3b-instruct:latest         (~8GB VRAM, BF16)
+  #   - nvcr.io/nim/deepseek-ai/deepseek-r1-distill-llama-8b:latest  (~16GB, INT4 AWQ)
+  #   - nvcr.io/nim/nvidia/llm-nim:latest  (bring-your-own model, see NVIDIA_SETUP.md)
+  #
+  # To use a HuggingFace model via llm-nim multi-LLM container:
+  #   Set NIM_MODEL_NAME=hf://Qwen/Qwen2.5-7B-Instruct  (or any HF model ID)
+  #
+  # Uncomment the service below when NGC_API_KEY is configured:
+
+  # nim-llm:
+  #   image: nvcr.io/nim/meta/llama-3.1-8b-instruct:latest
+  #   # Alternative images (pick one):
+  #   # image: nvcr.io/nim/meta/llama-3.2-3b-instruct:latest
+  #   # image: nvcr.io/nim/deepseek-ai/deepseek-r1-distill-llama-8b:latest
+  #   # image: nvcr.io/nim/nvidia/llm-nim:latest  # bring-your-own via NIM_MODEL_NAME
   #   runtime: nvidia
+  #   shm_size: "16gb"
   #   environment:
-  #     NIM_MODEL_NAME: ${NIM_MODEL_NAME:-qwen2.5-32b}
   #     NGC_API_KEY: ${NGC_API_KEY}
+  #     # Required only for llm-nim (bring-your-own) container:
+  #     # NIM_MODEL_NAME: hf://Qwen/Qwen2.5-7B-Instruct
+  #     # NIM_SERVED_MODEL_NAME: qwen2.5-7b  # name exposed via /v1/models
+  #     # For WSL2 / Windows host deployments:
+  #     # NIM_RELAX_MEM_CONSTRAINTS: "1"
   #   ports:
   #     - "8000:8000"
+  #   volumes:
+  #     - nim-cache:/opt/nim/.cache
+  #     # For bring-your-own local model (llm-nim only):
+  #     # - D:/ollama/models:/opt/models/local_model:ro
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-f", "http://localhost:8000/v1/health/ready"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 10
+  #     start_period: 120s   # NIM takes ~2min to download/load model on first run
   #   deploy:
   #     resources:
   #       reservations:
   #         devices:
-  #           - capabilities: [gpu]
+  #           - driver: nvidia
+  #             count: all
+  #             capabilities: [gpu]
+
+  # ─── NVIDIA LLM Router (Optional — Phase 3+) ────────────────────────────────
+  #
+  # Routes prompts to the optimal model based on intent classification.
+  # Uses Qwen 1.7B as the classifier (fits easily in VRAM alongside main model).
+  # Exposes: POST http://nim-router:8001/sfc_router/chat/completions
+  # Response: choices[0].message.content contains the recommended model name.
+  #
+  # See: https://github.com/NVIDIA-AI-Blueprints/llm-router
+  #
+  # nim-router:
+  #   image: nvcr.io/nim/qwen/qwen2.5-1.5b-instruct:latest
+  #   runtime: nvidia
+  #   environment:
+  #     NGC_API_KEY: ${NGC_API_KEY}
+  #   ports:
+  #     - "8001:8000"
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
 
 volumes:
   pgdata:
+  nim-cache:    # NIM model weights cache (persists across container restarts)
+  flywheel_logs:

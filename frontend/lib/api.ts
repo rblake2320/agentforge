@@ -1,3 +1,5 @@
+import type { Agent, AgentDetail } from "./types";
+
 const BASE = "/api/v1";
 
 function getToken(): string | null {
@@ -91,6 +93,21 @@ export const listMemories = (agentId: string, layer?: string) => {
   const qs = layer ? `?layer=${layer}` : "";
   return request<import("./types").MemoryEntry[]>("GET", `/portability/memory/${agentId}${qs}`);
 };
+
+// Chat
+export const chatWithAgent = (
+  agentId: string,
+  messages: Array<{ role: string; content: string }>,
+  sessionId?: string
+) =>
+  request<{
+    content: string;
+    model: string;
+    runtime: string;
+    session_id: string;
+    sig_id: string | null;
+    latency_ms: number;
+  }>("POST", `/chat/${agentId}`, { messages, session_id: sessionId ?? null });
 
 // Trust
 export const getTrustProfile = (agentId: string) =>
