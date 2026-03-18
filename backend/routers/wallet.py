@@ -43,9 +43,20 @@ def get_wallet(current_user: CurrentUser, db: DbDep) -> dict:
     keys = db.query(WalletKey).filter_by(wallet_id=wallet.wallet_id).all()
     return {
         "wallet_id": str(wallet.wallet_id),
+        "owner_id": str(wallet.owner_id),
         "created_at": wallet.created_at.isoformat(),
         "key_count": len([k for k in keys if k.revoked_at is None]),
         "revoked_key_count": len([k for k in keys if k.revoked_at is not None]),
+        "keys": [
+            {
+                "key_id": str(k.key_id),
+                "agent_id": str(k.agent_id),
+                "key_version": k.key_version,
+                "created_at": k.created_at.isoformat(),
+                "revoked_at": k.revoked_at.isoformat() if k.revoked_at else None,
+            }
+            for k in keys
+        ],
     }
 
 

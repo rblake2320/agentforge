@@ -353,14 +353,13 @@ def _select_model_for_intent(intent: str, agent: AgentIdentity) -> tuple[str, st
         return "nim", model
 
     elif preferred == "ollama":
+        # Prefer 8B models that fit fully in VRAM; fall back to larger if unavailable
         if intent in ("code", "reasoning"):
-            return "ollama", "deepseek-r1:32b"
-        if intent == "complex":
-            return "ollama", "llama3.1:70b"
-        return "ollama", "gemma3:latest"
+            return "ollama", "qwen2.5-coder:32b"
+        return "ollama", "llama3.1:8b"
 
     # Unknown preferred runtime — safe default
-    return "ollama", "gemma3:latest"
+    return "ollama", "llama3.1:8b"
 
 
 # ── Data Flywheel Logging ─────────────────────────────────────────────────────
@@ -451,11 +450,9 @@ async def chat(
 
             elif attempt_runtime == "ollama":
                 if intent in ("code", "reasoning"):
-                    ollama_model = "deepseek-r1:32b"
-                elif intent == "complex":
-                    ollama_model = "llama3.1:70b"
+                    ollama_model = "qwen2.5-coder:32b"
                 else:
-                    ollama_model = "gemma3:latest"
+                    ollama_model = "llama3.1:8b"
                 response = await _chat_ollama(messages, model=ollama_model, system_prompt=full_system)
 
             else:

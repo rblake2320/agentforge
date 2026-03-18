@@ -27,7 +27,7 @@ class Settings(BaseSettings):
     def jwt_public_key(self) -> str:
         """Return public key PEM with real newlines."""
         return self.jwt_public_key_pem.replace("\\n", "\n")
-    access_token_expire_minutes: int = 15
+    access_token_expire_minutes: int = 480  # 8 hours for usable dev/demo sessions
     refresh_token_expire_days: int = 7
 
     # Auth

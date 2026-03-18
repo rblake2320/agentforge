@@ -59,6 +59,8 @@ export const getCertificate = (id: string) => request<Record<string, unknown>>("
 
 // Wallet
 export const getWallet = () => request<import("./types").Wallet>("GET", "/wallet/");
+export const createWallet = (passphrase: string) =>
+  request<import("./types").Wallet>("POST", "/wallet/", { passphrase });
 export const storeKey = (agentId: string, privateKeyHex: string, passphrase: string) =>
   request("POST", "/wallet/keys", { agent_id: agentId, private_key_hex: privateKeyHex, passphrase });
 export const rotateKey = (agentId: string, newPrivateKeyHex: string, passphrase: string) =>

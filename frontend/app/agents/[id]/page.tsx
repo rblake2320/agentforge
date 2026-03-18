@@ -255,6 +255,12 @@ export default function AgentDetailPage() {
                 {agent.preferred_runtime}
               </span>
               <Link
+                href={`/agents/${agentId}/chat`}
+                className="text-xs px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white rounded-lg font-medium transition-colors mt-1"
+              >
+                💬 Chat
+              </Link>
+              <Link
                 href="/marketplace/create"
                 className="text-xs px-3 py-1.5 bg-violet-700 hover:bg-violet-600 text-white rounded-lg font-medium transition-colors mt-1"
               >
