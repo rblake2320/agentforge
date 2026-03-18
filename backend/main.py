@@ -41,6 +41,7 @@ app = FastAPI(
     description="AI Agent Identity & Licensing Platform — Cryptographic identities for AI agents",
     docs_url="/docs",
     redoc_url="/redoc",
+    redirect_slashes=False,  # Keeps FastAPI from issuing 307s that could escape the proxy boundary
 )
 
 # Security headers — must be added BEFORE CORS so it wraps outermost
