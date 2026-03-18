@@ -8,6 +8,8 @@ import json
 import os
 import uuid
 import asyncio
+import tempfile
+import shutil
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -57,7 +59,7 @@ class TestRuntimeManager:
 
     def test_intent_classify_simple(self):
         result = _classify_intent("hi")
-        assert result == "simple"
+        assert result == "chit_chat"  # Very short messages → chit_chat fast path
 
     def test_intent_classify_code(self):
         result = _classify_intent("write python function to parse JSON")
@@ -81,7 +83,7 @@ class TestRuntimeManager:
 
         with patch("backend.services.runtime_manager.httpx.AsyncClient", return_value=mock_client):
             # Force NIM runtime so we control exactly which path is taken
-            response = asyncio.get_event_loop().run_until_complete(
+            response = asyncio.run(
                 chat(
                     agent=test_agent,
                     messages=[{"role": "user", "content": "analyze this architecture"}],
@@ -102,56 +104,55 @@ class TestRuntimeManager:
 
     # ── Data Flywheel logging ───────────────────────────────────────────────────
 
-    def test_flywheel_log_created(self, db_session: Session, test_agent, tmp_path, monkeypatch):
+    def test_flywheel_log_created(self, db_session: Session, test_agent, monkeypatch):
         """After chat(), a JSONL entry should exist in flywheel_logs/{agent_id}.jsonl."""
-        # Redirect flywheel log directory to tmp_path
-        log_dir = tmp_path / "flywheel_logs"
+        # Use a real temp directory (avoids Windows pytest-tmp permission issues)
+        log_dir = Path(tempfile.mkdtemp())
+        try:
+            async def fake_post(url, *, json=None, headers=None, **kwargs):
+                return _fake_openai_response("logged response")
 
-        async def fake_post(url, *, json=None, headers=None, **kwargs):
-            return _fake_openai_response("logged response")
+            mock_client = AsyncMock()
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client.post = AsyncMock(side_effect=fake_post)
 
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.post = AsyncMock(side_effect=fake_post)
+            # Patch _log_for_flywheel to write into our controlled temp dir
+            import backend.services.runtime_manager as rm_module
 
-        # Patch the log path inside runtime_manager to use tmp_path
-        import backend.services.runtime_manager as rm_module
+            def patched_log(agent_id, messages, response, intent):
+                log_path = log_dir / f"{agent_id}.jsonl"
+                entry = {
+                    "agent_id": str(agent_id),
+                    "intent": intent,
+                    "model": response.model,
+                    "runtime": response.runtime,
+                    "messages": messages,
+                    "response": response.content,
+                }
+                with open(log_path, "a") as f:
+                    f.write(json.dumps(entry) + "\n")
 
-        original_log = rm_module._log_for_flywheel
+            monkeypatch.setattr(rm_module, "_log_for_flywheel", patched_log)
 
-        def patched_log(agent_id, messages, response, intent):
-            log_path = log_dir / f"{agent_id}.jsonl"
-            log_dir.mkdir(parents=True, exist_ok=True)
-            entry = {
-                "agent_id": str(agent_id),
-                "intent": intent,
-                "model": response.model,
-                "runtime": response.runtime,
-                "messages": messages,
-                "response": response.content,
-            }
-            with open(log_path, "a") as f:
-                f.write(json.dumps(entry) + "\n")
-
-        monkeypatch.setattr(rm_module, "_log_for_flywheel", patched_log)
-
-        with patch("backend.services.runtime_manager.httpx.AsyncClient", return_value=mock_client):
-            asyncio.get_event_loop().run_until_complete(
-                chat(
-                    agent=test_agent,
-                    messages=[{"role": "user", "content": "analyze something complex"}],
-                    runtime_override="nim",
+            with patch("backend.services.runtime_manager.httpx.AsyncClient", return_value=mock_client):
+                asyncio.run(
+                    chat(
+                        agent=test_agent,
+                        messages=[{"role": "user", "content": "analyze something complex"}],
+                        runtime_override="nim",
+                    )
                 )
-            )
 
-        log_file = log_dir / f"{test_agent.agent_id}.jsonl"
-        assert log_file.exists(), f"Flywheel log not created at {log_file}"
+            log_file = log_dir / f"{test_agent.agent_id}.jsonl"
+            assert log_file.exists(), f"Flywheel log not created at {log_file}"
 
-        lines = log_file.read_text().strip().splitlines()
-        assert len(lines) >= 1
+            lines = log_file.read_text().strip().splitlines()
+            assert len(lines) >= 1
 
-        entry = json.loads(lines[0])
-        assert entry["agent_id"] == str(test_agent.agent_id)
-        assert "intent" in entry
-        assert "model" in entry
+            entry = json.loads(lines[0])
+            assert entry["agent_id"] == str(test_agent.agent_id)
+            assert "intent" in entry
+            assert "model" in entry
+        finally:
+            shutil.rmtree(log_dir, ignore_errors=True)
