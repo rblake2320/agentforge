@@ -13,7 +13,7 @@ GET  /api/v1/marketplace/revenue                      — Seller revenue dashboa
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from ..deps import CurrentUser, DbDep
 from ..services.marketplace import (
     create_listing, browse_listings, purchase_license,
@@ -29,9 +29,9 @@ class CreateListingRequest(BaseModel):
     agent_id: uuid.UUID
     title: str
     description: str = ""
-    price_cents: int = 0
+    price_cents: int = Field(default=0, ge=0, description="Price in cents; must be non-negative")
     license_type: str = "perpetual"
-    max_clones: int = 100
+    max_clones: int = Field(default=100, ge=1, description="Maximum clone count; must be at least 1")
     category: str = "general"
     tags: list[str] = []
     terms: dict = {}

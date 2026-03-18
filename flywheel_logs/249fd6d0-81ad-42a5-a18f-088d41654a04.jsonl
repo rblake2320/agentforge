@@ -1,0 +1,1 @@
+{"ts": "2026-03-18T09:09:27.209829+00:00", "agent_id": "249fd6d0-81ad-42a5-a18f-088d41654a04", "intent": "complex", "model": "llama3.1:70b", "runtime": "ollama", "latency_ms": 0.5102157592773438, "prompt_tokens": 0, "completion_tokens": 0, "messages": [{"role": "user", "content": "analyze this architecture"}], "response": ""}

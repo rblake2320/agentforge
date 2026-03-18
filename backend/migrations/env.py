@@ -7,10 +7,16 @@ env.py runs in two modes:
 
 Schema creation (CREATE SCHEMA IF NOT EXISTS agentforge) happens
 automatically in online mode before the migration context is opened.
+
+The module is also safe to `import` outside the Alembic CLI (e.g. for
+syntax-checking or test discovery): all alembic.context proxy access is
+deferred inside functions and guarded at the bottom.
 """
 
-import sys
+from __future__ import annotations
+
 import os
+import sys
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool, text
@@ -29,24 +35,6 @@ for _p in (_root_dir, _backend_dir):
 
 from backend.models import Base, SCHEMA  # noqa: E402
 
-# ---------------------------------------------------------------------------
-# Alembic / logging config
-# ---------------------------------------------------------------------------
-config = context.config
-
-if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
-
-# Pull database URL from Settings (reads .env if present),
-# falling back to the alembic.ini value so offline mode still works.
-try:
-    from backend.config import get_settings as _get_settings
-    _settings = _get_settings()
-    config.set_main_option("sqlalchemy.url", _settings.database_url)
-except Exception:
-    # In CI / offline mode without a .env, use the ini value as-is.
-    pass
-
 target_metadata = Base.metadata
 
 
@@ -54,7 +42,14 @@ target_metadata = Base.metadata
 # Offline mode — generate raw SQL without a live DB connection
 # ---------------------------------------------------------------------------
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
+    cfg = context.config
+
+    if cfg.config_file_name is not None:
+        fileConfig(cfg.config_file_name)
+
+    _apply_db_url(cfg)
+
+    url = cfg.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -71,8 +66,15 @@ def run_migrations_offline() -> None:
 # Online mode — connect and migrate
 # ---------------------------------------------------------------------------
 def run_migrations_online() -> None:
+    cfg = context.config
+
+    if cfg.config_file_name is not None:
+        fileConfig(cfg.config_file_name)
+
+    _apply_db_url(cfg)
+
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        cfg.get_section(cfg.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
@@ -94,7 +96,28 @@ def run_migrations_online() -> None:
             context.run_migrations()
 
 
-if context.is_offline_mode():
-    run_migrations_offline()
-else:
-    run_migrations_online()
+def _apply_db_url(cfg) -> None:  # type: ignore[type-arg]
+    """Override sqlalchemy.url from Settings when available."""
+    try:
+        from backend.config import get_settings as _get_settings
+        _settings = _get_settings()
+        cfg.set_main_option("sqlalchemy.url", _settings.database_url)
+    except Exception:
+        # In CI / offline mode without a .env, use the ini value as-is.
+        pass
+
+
+# ---------------------------------------------------------------------------
+# Entry point — only runs when Alembic CLI invokes this file.
+# alembic.context.is_offline_mode() raises AttributeError when accessed
+# outside the CLI runner, so we guard with a try/except.
+# ---------------------------------------------------------------------------
+try:
+    if context.is_offline_mode():
+        run_migrations_offline()
+    else:
+        run_migrations_online()
+except (AttributeError, NameError):
+    # Module is being imported for inspection only (not via `alembic` CLI).
+    # The alembic.context proxy is not initialised outside the CLI runner.
+    pass

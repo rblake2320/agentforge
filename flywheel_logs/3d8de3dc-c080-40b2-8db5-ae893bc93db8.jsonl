@@ -1,0 +1,1 @@
+{"ts": "2026-03-18T09:08:14.898379+00:00", "agent_id": "3d8de3dc-c080-40b2-8db5-ae893bc93db8", "intent": "complex", "model": "test-model", "runtime": "nim", "latency_ms": 0.5114078521728516, "prompt_tokens": 10, "completion_tokens": 20, "messages": [{"role": "user", "content": "analyze this architecture"}], "response": "agent response"}

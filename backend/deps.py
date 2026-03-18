@@ -7,7 +7,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 
-from .database import get_db
+from .database import get_db, set_db_user_context
 from .config import get_settings
 from .models.user import User
 
@@ -61,6 +61,10 @@ def get_current_user(
     user = db.get(User, user_id)
     if user is None or not user.is_active:
         raise credentials_exception
+
+    # Activate RLS context so all subsequent queries on this session are
+    # automatically scoped to this user's rows.
+    set_db_user_context(db, str(user.id))
 
     return user
 
