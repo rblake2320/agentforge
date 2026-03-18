@@ -112,6 +112,13 @@ def birth_agent(
     db.commit()
     db.refresh(agent)
 
+    # Auto-initialize trust profile for new agent
+    try:
+        from .trust import calculate_trust_score
+        calculate_trust_score(db, agent)
+    except Exception:
+        pass  # Trust profile creation is best-effort at birth
+
     return agent, priv_key
 
 

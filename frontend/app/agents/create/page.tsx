@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createAgent } from "../../../lib/api";
+import { createAgent, storeKey, getWallet, createWallet } from "../../../lib/api";
 
 const AGENT_TYPES = [
   { value: "assistant", label: "Assistant", desc: "General-purpose conversational agent" },
@@ -33,6 +33,9 @@ export default function CreateAgentPage() {
   const [error, setError] = useState("");
   const [born, setBorn] = useState<{ agent: { agent_id: string; did_uri: string; key_fingerprint: string }; private_key_hex: string } | null>(null);
   const [keyCopied, setKeyCopied] = useState(false);
+  const [walletPassphrase, setWalletPassphrase] = useState("");
+  const [storeStatus, setStoreStatus] = useState<"idle" | "storing" | "stored" | "error">("idle");
+  const [storeError, setStoreError] = useState("");
 
   function addCapability() {
     const cap = capInput.trim();
@@ -72,6 +75,25 @@ export default function CreateAgentPage() {
       navigator.clipboard.writeText(born.private_key_hex);
       setKeyCopied(true);
       setTimeout(() => setKeyCopied(false), 3000);
+    }
+  }
+
+  async function handleStoreInWallet() {
+    if (!born || !walletPassphrase) return;
+    setStoreStatus("storing");
+    setStoreError("");
+    try {
+      // Ensure wallet exists (create if not)
+      try {
+        await getWallet();
+      } catch {
+        await createWallet(walletPassphrase);
+      }
+      await storeKey(born.agent.agent_id, born.private_key_hex, walletPassphrase);
+      setStoreStatus("stored");
+    } catch (err: unknown) {
+      setStoreStatus("error");
+      setStoreError(err instanceof Error ? err.message : "Failed to store key");
     }
   }
 
@@ -134,6 +156,39 @@ export default function CreateAgentPage() {
                 <span className="font-mono text-xs text-zinc-300">{born.agent.key_fingerprint.slice(0, 24)}...</span>
               </div>
             </div>
+
+            {/* Wallet storage section */}
+            {storeStatus !== "stored" ? (
+              <div className="mb-4 border border-zinc-700 rounded-lg p-4">
+                <p className="text-sm font-medium text-zinc-300 mb-2">🔐 Store Key in Wallet</p>
+                <p className="text-xs text-zinc-500 mb-3">
+                  Encrypt and store this key in your AgentForge wallet so it&apos;s retrievable later.
+                </p>
+                <div className="flex gap-2">
+                  <input
+                    type="password"
+                    value={walletPassphrase}
+                    onChange={(e) => setWalletPassphrase(e.target.value)}
+                    placeholder="Wallet passphrase"
+                    className="flex-1 bg-zinc-800 border border-zinc-600 rounded-lg px-3 py-2 text-sm text-zinc-100 focus:outline-none focus:border-green-500"
+                  />
+                  <button
+                    onClick={handleStoreInWallet}
+                    disabled={storeStatus === "storing" || !walletPassphrase}
+                    className="bg-green-700 hover:bg-green-600 disabled:opacity-40 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    {storeStatus === "storing" ? "Storing…" : "Store"}
+                  </button>
+                </div>
+                {storeStatus === "error" && (
+                  <p className="text-xs text-red-400 mt-2">{storeError}</p>
+                )}
+              </div>
+            ) : (
+              <div className="mb-4 bg-green-950 border border-green-800 rounded-lg p-3 text-sm text-green-400">
+                ✓ Key stored securely in your wallet
+              </div>
+            )}
 
             <button
               onClick={() => router.push("/dashboard")}
