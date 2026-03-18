@@ -26,14 +26,16 @@ class TestAgentBirth:
         return resp.json()["access_token"]
 
     def test_register_user(self, client):
+        import uuid as _uuid
+        unique_email = f"new_{_uuid.uuid4().hex[:8]}@example.com"
         resp = client.post("/api/v1/auth/register", json={
-            "email": "new@example.com",
+            "email": unique_email,
             "password": "Secure1234Pass!",
             "name": "New User",
         })
-        assert resp.status_code == 201
+        assert resp.status_code == 201, resp.text
         data = resp.json()
-        assert data["email"] == "new@example.com"
+        assert data["email"] == unique_email
         assert "password_hash" not in data
 
     def test_duplicate_email_rejected(self, client):

@@ -109,7 +109,7 @@ def write_memory(
     mem = AgentMemoryLayer(
         agent_id=agent.agent_id,
         layer=mem_layer,
-        content_enc=ciphertext + b"||" + salt,   # pack salt with ciphertext
+        content_enc=salt + ciphertext,   # fixed 16-byte salt prefix + ciphertext
         content_hash=content_hash,
         summary=summary,
         priority=priority,
@@ -127,10 +127,10 @@ def read_memory(
 ) -> bytes:
     """Decrypt and return memory content. Updates accessed_at."""
     raw = memory.content_enc
-    sep = raw.find(b"||")
-    if sep == -1:
+    # Format: 16-byte salt prefix + ciphertext (fixed-length split — no delimiter)
+    if len(raw) < 16:
         raise ValueError("Invalid memory encoding")
-    ciphertext, salt = raw[:sep], raw[sep + 2:]
+    salt, ciphertext = raw[:16], raw[16:]
     content = decrypt_key(ciphertext, salt, passphrase)
 
     memory.accessed_at = datetime.now(timezone.utc)
@@ -208,7 +208,7 @@ def create_handoff(
     """
     token = "HO-" + secrets.token_urlsafe(32)
     encrypted_snapshot, salt = encrypt_key(state_snapshot, passphrase)
-    packed = encrypted_snapshot + b"||" + salt
+    packed = salt + encrypted_snapshot   # fixed 16-byte salt prefix + ciphertext
 
     handoff = SessionHandoff(
         agent_id=agent.agent_id,
@@ -246,12 +246,11 @@ def accept_handoff(
         db.commit()
         raise ValueError("Handoff token has expired")
 
-    # Decrypt snapshot
+    # Decrypt snapshot — format: 16-byte salt prefix + ciphertext (fixed-length split)
     raw = handoff.state_snapshot_enc
-    sep = raw.find(b"||")
-    if sep == -1:
+    if len(raw) < 16:
         raise ValueError("Invalid handoff encoding")
-    ciphertext, salt = raw[:sep], raw[sep + 2:]
+    salt, ciphertext = raw[:16], raw[16:]
     state_snapshot = decrypt_key(ciphertext, salt, passphrase)
 
     # Mark accepted

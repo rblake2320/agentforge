@@ -42,22 +42,41 @@ def engine():
     # Also fix FKs by recreating — just create_all with new schema
     Base.metadata.create_all(eng)
     yield eng
-    # Cleanup
-    Base.metadata.drop_all(eng)
+    # Cleanup: drop the test schema first (CASCADE handles all tables + dependencies),
+    # then attempt drop_all to clean up any schema-level objects (best-effort).
     with eng.begin() as conn:
         conn.execute(text(f"DROP SCHEMA IF EXISTS {TEST_SCHEMA} CASCADE"))
+    try:
+        Base.metadata.drop_all(eng)
+    except Exception:
+        pass  # Cross-schema enum types (e.g. agentforge.heartbeat_status) may linger — OK
     Base.metadata.schema = original_schema
+    for table in Base.metadata.tables.values():
+        table.schema = original_schema
 
 
 @pytest.fixture(scope="function")
 def db_session(engine):
-    Session = sessionmaker(bind=engine)
-    session = Session()
+    """
+    Per-test database session using SAVEPOINT pattern.
+
+    When the service under test calls db.commit(), it releases a SAVEPOINT but
+    does NOT commit to the real DB — the outer transaction absorbs it.
+    Rolling back the outer transaction at teardown undoes ALL changes, including
+    committed data from within the service, keeping tests fully isolated.
+    """
+    connection = engine.connect()
+    outer_tx = connection.begin()
+    session = sessionmaker(
+        bind=connection,
+        join_transaction_mode="create_savepoint",
+    )()
     try:
         yield session
     finally:
-        session.rollback()
         session.close()
+        outer_tx.rollback()
+        connection.close()
 
 
 @pytest.fixture(scope="function")
