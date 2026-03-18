@@ -13,8 +13,13 @@ from sqlalchemy.orm import sessionmaker
 from fastapi.testclient import TestClient
 
 from backend.models import Base, SCHEMA
+from backend.models.user import User
+from backend.models.agent_identity import AgentIdentity
 from backend.database import get_db
 from backend.main import app
+from backend.crypto.ed25519 import generate_keypair, fingerprint
+from backend.crypto.did import generate_did, create_did_document, create_verifiable_credential
+from backend.services.identity import PLATFORM_DID, _get_platform_signing_key
 
 # Use the same PostgreSQL instance but a test-specific schema
 TEST_DB_URL = os.environ.get(
@@ -53,6 +58,82 @@ def db_session(engine):
     finally:
         session.rollback()
         session.close()
+
+
+@pytest.fixture(scope="function")
+def test_user(db_session):
+    """Create and return a test user."""
+    from argon2 import PasswordHasher
+    ph = PasswordHasher()
+    user = User(
+        email=f"test_{uuid.uuid4().hex[:8]}@example.com",
+        password_hash=ph.hash("testpassword"),
+        name="Test User",
+    )
+    db_session.add(user)
+    db_session.flush()
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture(scope="function")
+def second_user(db_session):
+    """Create and return a second distinct test user."""
+    from argon2 import PasswordHasher
+    ph = PasswordHasher()
+    user = User(
+        email=f"second_{uuid.uuid4().hex[:8]}@example.com",
+        password_hash=ph.hash("secondpassword"),
+        name="Second User",
+    )
+    db_session.add(user)
+    db_session.flush()
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture(scope="function")
+def test_agent(db_session, test_user):
+    """Create and return a test agent identity."""
+    agent_uuid = str(uuid.uuid4())
+    kp = generate_keypair()
+    did_uri = generate_did(agent_uuid)
+    did_doc = create_did_document(agent_uuid, kp.public_key)
+    vc = create_verifiable_credential(
+        agent_uuid=agent_uuid,
+        did=did_uri,
+        issuer_did=PLATFORM_DID,
+        display_name="Test Agent",
+        agent_type="assistant",
+        model_version="test-1.0",
+        purpose="Testing",
+        capabilities=["chat"],
+        public_key=kp.public_key,
+        signing_private_key=_get_platform_signing_key(),
+    )
+    agent = AgentIdentity(
+        agent_id=uuid.UUID(agent_uuid),
+        owner_id=test_user.id,
+        did_uri=did_uri,
+        display_name="Test Agent",
+        agent_type="assistant",
+        model_version="test-1.0",
+        purpose="Testing",
+        capabilities=["chat"],
+        public_key=kp.public_key,
+        key_algorithm="ed25519",
+        key_fingerprint=fingerprint(kp.public_key),
+        did_document=did_doc,
+        verifiable_credential=vc,
+        behavioral_signature={},
+        routing_config={},
+        is_active=True,
+        is_public=False,
+    )
+    db_session.add(agent)
+    db_session.flush()
+    db_session.refresh(agent)
+    return agent
 
 
 @pytest.fixture(scope="function")

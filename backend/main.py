@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import get_settings
 from .database import init_db
-from .routers import auth_router, agents_router
+from .routers import auth_router, agents_router, wallet_router, tamper_router, ws_router, chat_router, marketplace_router, portability_router, trust_router
 
 settings = get_settings()
 
@@ -33,6 +33,13 @@ app.add_middleware(
 # Routers
 app.include_router(auth_router)
 app.include_router(agents_router)
+app.include_router(wallet_router)
+app.include_router(tamper_router)
+app.include_router(ws_router)
+app.include_router(chat_router)
+app.include_router(marketplace_router)
+app.include_router(portability_router)
+app.include_router(trust_router)
 
 
 @app.on_event("startup")
