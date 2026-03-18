@@ -1,0 +1,51 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "?Booker78!"
+      POSTGRES_DB: agentvault
+    ports:
+      - "5433:5432"   # 5433 to avoid conflict with existing PostgreSQL on 5432
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8400:8400"
+    environment:
+      DATABASE_URL: postgresql://postgres:%3FBooker78%21@postgres:5432/agentvault
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8400 --reload
+
+  # NVIDIA NIM (Phase 3 — uncomment when NGC_API_KEY available)
+  # nim:
+  #   image: nvcr.io/nim/nvidia/llm-nim:latest
+  #   runtime: nvidia
+  #   environment:
+  #     NIM_MODEL_NAME: ${NIM_MODEL_NAME:-qwen2.5-32b}
+  #     NGC_API_KEY: ${NGC_API_KEY}
+  #   ports:
+  #     - "8000:8000"
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - capabilities: [gpu]
+
+volumes:
+  pgdata:
